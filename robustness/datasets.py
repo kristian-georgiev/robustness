@@ -304,7 +304,7 @@ class CustomImageNet(DataSet):
         ds_name = 'custom_imagenet'
         ds_kwargs = {
             'num_classes': len(custom_grouping),
-            'mean': ch.tensor([0.4717, 0.4499, 0.3837]), 
+            'mean': ch.tensor([0.4717, 0.4499, 0.3837]),
             'std': ch.tensor([0.2600, 0.2516, 0.2575]),
             'custom_class': None,
             'label_mapping': get_label_mapping(ds_name,

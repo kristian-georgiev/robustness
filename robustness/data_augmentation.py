@@ -1,8 +1,12 @@
-""" Module responsible for data augmentation constants and configuration.  """
+"""
+Module responsible for data augmentation constants and configuration.  
+"""
 
 import torch as ch
+import numpy as np
 from torchvision import transforms
 from PIL import Image
+from torchvision.transforms import functional as TVF
 
 
 class MakeCircular(ch.nn.Module):
@@ -31,13 +35,13 @@ class MakeCircular(ch.nn.Module):
                 if d_i ** 2 / r_h ** 2 + d_j ** 2 / r_w ** 2 > 1:
                     mask[i][j] = 0.
         # add empty dims for channels
-        return ch.from_numpy(mask).unsqueeze(0)
+        return ch.from_numpy(mask).float().unsqueeze(0)
 
     def make_circular(self, tensor):
         if self.mask is None:
             # assert len(img.shape) == 3, "data must be in c, h, w format"
-            self.mask = self.create_mask(tensor.size(1), tensor.size(2))
-        return self.mask * img  # batch and channel dims are broadcasted
+            self.mask = self.create_mask(tensor.size(-2), tensor.size(-1))
+        return (self.mask * tensor)  # batch and channel dims are broadcasted
 
     def forward(self, tensor):
         if isinstance(tensor, ch.Tensor):
@@ -73,9 +77,10 @@ class MultipleRandomRotations(ch.nn.Module):
         self.fill = fill
         self.num_rots = num_rots
 
+    @staticmethod
     def get_params(degree):
         angle = float(ch.empty(1).uniform_(float(-degree),
-                                              float(degree)).item())
+                                           float(degree)).item())
         return angle
 
     def forward(self, img):
@@ -166,7 +171,7 @@ Resized to 256x256 then center cropped to 224x224.
 TRAIN_TRANSFORMS_DEFAULT = lambda size: transforms.Compose([
             transforms.RandomCrop(size, padding=4),
             transforms.RandomHorizontalFlip(),
-            transforms.ColorJitter(.25,.25,.25),
+            transforms.ColorJitter(.25, .25, .25),
             transforms.RandomRotation(2),
             transforms.ToTensor(),
         ])
@@ -197,27 +202,23 @@ def get_rot_transforms(num_rots, resampling=Image.BICUBIC, make_circ=True):
                         IMAGENET_PCA['eigvec'])
 
     TRAIN_ROT_TRANSFORMS_IMAGENET = transforms.Compose([
-            transforms.RandomResizedCrop(224),
-            transforms.RandomHorizontalFlip(),
-            MultipleRandomRotations(num_rots),
-            transforms.Lambda(lambda imgs: tuple([jitter(i) for i in imgs])),
-            transforms.Lambda(lambda imgs:
-                              tuple([transforms.ToTensor(i) for i in imgs])),
-            transforms.Lambda(lambda tensors:
-                              ch.stack([lighting(t) for t in tensors])),
-            MakeCircular() if make_circ else NoneTransform()
+        transforms.RandomResizedCrop(224),
+        transforms.RandomHorizontalFlip(),
+        MultipleRandomRotations(num_rots, degree=180., resample=resampling),
+        transforms.Lambda(lambda imgs: tuple([jitter(i) for i in imgs])),
+        transforms.Lambda(lambda imgs:
+                          tuple([transforms.ToTensor()(i) for i in imgs])),
+        transforms.Lambda(lambda tensors:
+                          ch.stack([lighting(t) for t in tensors])),
+        MakeCircular() if make_circ else NoneTransform()
         ])
 
     TEST_ROT_TRANSFORMS_IMAGENET = transforms.Compose([
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            MultipleRandomRotations(num_rots),
-            transforms.Lambda(lambda imgs:
-                              ch.stack([transforms.ToTensor(i) for i in imgs])),
-            MakeCircular() if make_circ else NoneTransform()
+        transforms.Resize(256),
+        transforms.CenterCrop(224),
+        MultipleRandomRotations(num_rots, degree=180., resample=resampling),
+        transforms.Lambda(lambda imgs:
+                          ch.stack([transforms.ToTensor()(i) for i in imgs])),
+        MakeCircular() if make_circ else NoneTransform()
         ])
     return TRAIN_ROT_TRANSFORMS_IMAGENET, TEST_ROT_TRANSFORMS_IMAGENET
-
-"""
-Standard training data augmentation for ImageNet-scale datasets: Random crop,
-Random flip, Color Jitter, and Lighting Transform (see https://git.io/fhBOc)

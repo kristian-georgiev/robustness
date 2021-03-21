@@ -3,7 +3,7 @@
 ignored.**
 
 This module houses the :class:`robustness.attacker.Attacker` and
-:class:`robustness.attacker.AttackerModel` classes. 
+:class:`robustness.attacker.AttackerModel` classes.
 
 :class:`~robustness.attacker.Attacker` is an internal class that should not be
 imported/called from outside the library.

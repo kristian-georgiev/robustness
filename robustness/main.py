@@ -7,6 +7,7 @@ from argparse import ArgumentParser
 import os
 import git
 import torch as ch
+from PIL import Image
 
 import cox
 import cox.utils
@@ -14,11 +15,14 @@ import cox.store
 
 try:
     from .model_utils import make_and_restore_model
-    from .datasets import DATASETS
+    from .datasets import DATASETS, CustomImageNet
     from .train import train_model, eval_model
     from .tools import constants, helpers
     from . import defaults, __version__
+    from .tools.breeds_helpers import BreedsDatasetGenerator
+    from . import defaults
     from .defaults import check_and_fill_args
+    from .data_augmentation import get_rot_transforms
 except:
     raise ValueError("Make sure to run with python -m (see README.md)")
 
@@ -28,6 +32,12 @@ parser = defaults.add_args_to_parser(defaults.CONFIG_ARGS, parser)
 parser = defaults.add_args_to_parser(defaults.MODEL_LOADER_ARGS, parser)
 parser = defaults.add_args_to_parser(defaults.TRAINING_ARGS, parser)
 parser = defaults.add_args_to_parser(defaults.PGD_ARGS, parser)
+parser.add_argument('--num_rots', type=int, default=0)
+parser.add_argument('--make_circ', action='store_true')
+parser.add_argument('--bicubic', action='store_true')
+parser.add_argument('--direct_regularizer', action='store_true')
+parser.add_argument('--reg_alpha', type=float, default=0.05)
+parser.add_argument('--aggregation', default='mean', choices=['mean', 'max'])
 
 def main(args, store=None):
     '''Given arguments from `setup_args` and a store from `setup_store`,
@@ -36,10 +46,35 @@ def main(args, store=None):
     '''
     # MAKE DATASET AND LOADERS
     data_path = os.path.expandvars(args.data)
-    dataset = DATASETS[args.dataset](data_path)
 
-    train_loader, val_loader = dataset.make_loaders(args.workers,
-                    args.batch_size, data_aug=bool(args.data_aug))
+    PROJ_DIR = '/home/gridsan/krisgrg/superurop/adv-rot-equiv/'
+    INFO_DIR = PROJ_DIR + 'data/imagenet_class_hierarchy/modified'
+    data_generator = BreedsDatasetGenerator(INFO_DIR)
+    ret = data_generator.get_superclasses(level=3,
+                                          Nsubclasses=None,
+                                          split=None,
+                                          ancestor=None,
+                                          balanced=True)
+    superclasses, subclass_split, _ = ret
+    all_subclasses = subclass_split[0]
+
+    bicubic_resample = Image.BICUBIC if args.bicubic else None
+    transforms = get_rot_transforms(args.num_rots,
+                                    bicubic_resample,
+                                    args.make_circ)
+
+    # Hardcoded for BREEDS, proper mean, std computed for level=3
+    dataset = CustomImageNet(data_path,
+                             custom_grouping=all_subclasses,
+                             transform_train=transforms[0],
+                             transform_test=transforms[1],
+                             mean=ch.tensor([0.486, 0.455, 0.398]),
+                             std=ch.tensor([0.221, 0.217, 0.215]))
+
+    train_loader, val_loader = dataset.make_loaders(
+        args.workers,
+        args.batch_size,
+        data_aug=bool(args.data_aug))
 
     train_loader = helpers.DataPrefetcher(train_loader)
     val_loader = helpers.DataPrefetcher(val_loader)
@@ -47,8 +82,10 @@ def main(args, store=None):
 
     # MAKE MODEL
     model, checkpoint = make_and_restore_model(arch=args.arch,
-            dataset=dataset, resume_path=args.resume)
-    if 'module' in dir(model): model = model.module
+                                               dataset=dataset,
+                                               resume_path=args.resume)
+    if 'module' in dir(model):
+        model = model.module
 
     print(args)
     if args.eval_only:

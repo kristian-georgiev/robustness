@@ -8,7 +8,7 @@ from cox.utils import Parameters
 from .tools import helpers
 from .tools.helpers import AverageMeter, ckpt_at_epoch, has_attr
 from .tools import constants as consts
-import dill 
+import dill
 import os
 import time
 import warnings
@@ -18,10 +18,10 @@ if int(os.environ.get("NOTEBOOK_MODE", 0)) == 1:
 else:
     from tqdm import tqdm as tqdm
 
-try:
-    from apex import amp
-except Exception as e:
-    warnings.warn('Could not import amp.')
+# try:
+    # from apex import amp
+# except Exception as e:
+    # warnings.warn('Could not import amp.')
 
 def check_required_args(args, eval_only=False):
     """
@@ -34,7 +34,7 @@ def check_required_args(args, eval_only=False):
     required_args_eval = ["adv_eval"]
     required_args_train = ["epochs", "out_dir", "adv_train",
         "log_iters", "lr", "momentum", "weight_decay"]
-    adv_required_args = ["attack_steps", "eps", "constraint", 
+    adv_required_args = ["attack_steps", "eps", "constraint",
             "use_best", "attack_lr", "random_restarts"]
 
     # Generic function for checking all arguments in a list
@@ -71,7 +71,7 @@ def make_optimizer_and_schedule(args, model, checkpoint, params):
         checkpoint (dict) : a loaded checkpoint saved by this library and loaded
             with `ch.load`
         params (list|None) : a list of parameters that should be updatable, all
-            other params will not update. If ``None``, update all params 
+            other params will not update. If ``None``, update all params
 
     Returns:
         An optimizer (ch.nn.optim.Optimizer) and a scheduler
@@ -80,7 +80,7 @@ def make_optimizer_and_schedule(args, model, checkpoint, params):
     # Make optimizer
     param_list = model.parameters() if params is None else params
     optimizer = SGD(param_list, args.lr, momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+                    weight_decay=args.weight_decay)
 
     if args.mixed_precision:
         model.to('cuda')
@@ -143,30 +143,30 @@ def eval_model(args, model, loader, store):
     check_required_args(args, eval_only=True)
     start_time = time.time()
 
-    if store is not None: 
+    if store is not None:
         store.add_table(consts.LOGS_TABLE, consts.LOGS_SCHEMA)
     writer = store.tensorboard if store else None
 
     assert not hasattr(model, "module"), "model is already in DataParallel."
     model = ch.nn.DataParallel(model)
 
-    prec1, nat_loss = _model_loop(args, 'val', loader, 
+    prec1, nat_loss = _model_loop(args, 'val', loader,
                                         model, None, 0, False, writer)
 
     adv_prec1, adv_loss = float('nan'), float('nan')
-    if args.adv_eval: 
+    if args.adv_eval:
         args.eps = eval(str(args.eps)) if has_attr(args, 'eps') else None
         args.attack_lr = eval(str(args.attack_lr)) if has_attr(args, 'attack_lr') else None
-        adv_prec1, adv_loss = _model_loop(args, 'val', loader, 
-                                        model, None, 0, True, writer)
+        adv_prec1, adv_loss = _model_loop(args, 'val', loader,
+                                          model, None, 0, True, writer)
     log_info = {
-        'epoch':0,
-        'nat_prec1':prec1,
-        'adv_prec1':adv_prec1,
-        'nat_loss':nat_loss,
-        'adv_loss':adv_loss,
-        'train_prec1':float('nan'),
-        'train_loss':float('nan'),
+        'epoch': 0,
+        'nat_prec1': prec1,
+        'adv_prec1': adv_prec1,
+        'nat_loss': nat_loss,
+        'adv_loss': adv_loss,
+        'train_prec1': float('nan'),
+        'train_loss': float('nan'),
         'time': time.time() - start_time
     }
 
@@ -177,19 +177,19 @@ def eval_model(args, model, loader, store):
 def train_model(args, model, loaders, *, checkpoint=None, dp_device_ids=None,
             store=None, update_params=None, disable_no_grad=False):
     """
-    Main function for training a model. 
+    Main function for training a model.
 
     Args:
         args (object) : A python object for arguments, implementing
             ``getattr()`` and ``setattr()`` and having the following
-            attributes. See :attr:`robustness.defaults.TRAINING_ARGS` for a 
+            attributes. See :attr:`robustness.defaults.TRAINING_ARGS` for a
             list of arguments, and you can use
             :meth:`robustness.defaults.check_and_fill_args` to make sure that
             all required arguments are filled and to fill missing args with
             reasonable defaults:
 
             adv_train (int or bool, *required*)
-                if 1/True, adversarially train, otherwise if 0/False do 
+                if 1/True, adversarially train, otherwise if 0/False do
                 standard training
             epochs (int, *required*)
                 number of epochs to train for
@@ -308,7 +308,7 @@ def train_model(args, model, loaders, *, checkpoint=None, dp_device_ids=None,
 
     for epoch in range(start_epoch, args.epochs):
         # train for one epoch
-        train_prec1, train_loss = _model_loop(args, 'train', train_loader, 
+        train_prec1, train_loss = _model_loop(args, 'train', train_loader,
                 model, opt, epoch, args.adv_train, writer)
         last_epoch = (epoch == (args.epochs - 1))
 
@@ -442,15 +442,38 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
 
     iterator = tqdm(enumerate(loader), total=len(loader))
     for i, (inp, target) in iterator:
-       # measure data loading time
+        loss = None
         target = target.cuda(non_blocking=True)
-        output, final_inp = model(inp, target=target, make_adv=adv,
-                                  **attack_kwargs)
-        loss = train_criterion(output, target)
+        sh = inp.shape
+        # combine batch and rot dims
+        out, final_inp_tmp = model(inp.view(-1, *sh[2:]),
+                                   target=target,
+                                   make_adv=adv,
+                                   with_latent=True,
+                                   **attack_kwargs)
+        output, latent = out
+        output = output.view(sh[0], sh[1], *output.shape[1:])
+        latent = latent.view(sh[0], sh[1], *latent.shape[1:])
+        output_nat = output[:, 0, ...]
 
-        if len(loss.shape) > 0: loss = loss.mean()
+        if args.aggregation == 'mean':
+            loss = ch.mean(ch.stack([train_criterion(output[:, rot, ...],
+                                                     target)
+                                     for rot in range(output.size(1))]))
+        else:  # aggregation == 'max'
+            loss = ch.max(ch.stack([train_criterion(output[:, rot, ...],
+                                                    target)
+                                    for rot in range(output.size(1))]))
 
-        model_logits = output[0] if (type(output) is tuple) else output
+        reg_term = 0.
+        if args.direct_regularizer:
+            reg_term = (latent[:, 0, ...] - latent[:, -1, ...]).mean()
+            reg_term *= args.reg_alpha
+
+        if len(loss.shape) > 0:
+            loss = loss.mean()
+
+        model_logits = output_nat[0] if (type(output_nat) is tuple) else output_nat
 
         # measure accuracy and record loss
         top1_acc = float('nan')
@@ -460,7 +483,9 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
             if has_attr(args, "custom_accuracy"):
                 prec1, prec5 = args.custom_accuracy(model_logits, target)
             else:
-                prec1, prec5 = helpers.accuracy(model_logits, target, topk=(1, maxk))
+                prec1, prec5 = helpers.accuracy(model_logits,
+                                                target,
+                                                topk=(1, maxk))
                 prec1, prec5 = prec1[0], prec5[0]
 
             losses.update(loss.item(), inp.size(0))
@@ -472,9 +497,9 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
         except:
             warnings.warn('Failed to calculate the accuracy.')
 
-        reg_term = 0.0
-        if has_attr(args, "regularizer"):
-            reg_term =  args.regularizer(model, inp, target)
+        # reg_term = 0.0
+        # if has_attr(args, "regularizer"):
+            # reg_term = args.regularizer(model, inp, target)
         loss = loss + reg_term
 
         # compute gradient and do SGD step
@@ -496,8 +521,8 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
         # ITERATOR
         desc = ('{2} Epoch:{0} | Loss {loss.avg:.4f} | '
                 '{1}1 {top1_acc:.3f} | {1}5 {top5_acc:.3f} | '
-                'Reg term: {reg} ||'.format( epoch, prec, loop_msg, 
-                loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
+                'Reg term: {reg} ||'.format(epoch, prec, loop_msg,
+                 loss=losses, top1_acc=top1_acc, top5_acc=top5_acc, reg=reg_term))
 
         # USER-DEFINED HOOK
         if has_attr(args, 'iteration_hook'):
