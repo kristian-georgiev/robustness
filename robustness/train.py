@@ -490,7 +490,10 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
 
         reg_term = 0.
         if args.direct_regularizer:
-            reg_term = (latent[:, 0, ...] - latent[:, -1, ...]).mean()
+            reg_term = ch.norm(latent[:, 0, ...] -
+                               latent[:, 1:, ...].mean(dim=1),
+                               dim=list(range(1, len(latent.shape) - 1))).mean()
+
             reg_term *= args.reg_alpha
 
         if len(loss.shape) > 0:
