@@ -19,7 +19,7 @@ import pathlib
 
 import torch as ch
 import torch.utils.data
-from . import imagenet_models, cifar_models
+from . import imagenet_models, cifar_models, mnist_models
 from torchvision import transforms, datasets
 
 from .tools import constants
@@ -72,7 +72,7 @@ class DataSet(object):
                 transforms to apply to the validation images from the
                 dataset
         """
-        required_args = ['num_classes', 'mean', 'std', 
+        required_args = ['num_classes', 'mean', 'std',
                          'transform_train', 'transform_test']
         optional_args = ['custom_class', 'label_mapping', 'custom_class_args']
 
@@ -83,7 +83,7 @@ class DataSet(object):
         extra_args = set(kwargs.keys()) - set(required_args + optional_args)
         if len(extra_args) > 0:
             raise ValueError("Got unrecognized args %s" % extra_args)
-        final_kwargs = {k: kwargs.get(k, None) for k in required_args + optional_args} 
+        final_kwargs = {k: kwargs.get(k, None) for k in required_args + optional_args}
 
         self.ds_name = ds_name
         self.data_path = data_path
@@ -108,8 +108,8 @@ class DataSet(object):
         `model_utils.make_and_restore_model </source/robustness.model_utils.html>`_.
 
         Args:
-            arch (str) : name of architecture 
-            pretrained (bool): whether to try to load torchvision 
+            arch (str) : name of architecture
+            pretrained (bool): whether to try to load torchvision
                 pretrained checkpoint
 
         Returns:
@@ -119,7 +119,7 @@ class DataSet(object):
 
         raise NotImplementedError
 
-    def make_loaders(self, workers, batch_size, data_aug=True, subset=None, 
+    def make_loaders(self, workers, batch_size, data_aug=True, subset=None,
                     subset_start=0, subset_type='rand', val_batch_size=None,
                     only_val=False, shuffle_train=True, shuffle_val=True, subset_seed=None):
         '''
@@ -152,7 +152,7 @@ class DataSet(object):
             parameters given. These are standard PyTorch data loaders, and
             thus can just be used via:
 
-            >>> train_loader, val_loader = ds.make_loaders(workers=8, batch_size=128) 
+            >>> train_loader, val_loader = ds.make_loaders(workers=8, batch_size=128)
             >>> for im, lab in train_loader:
             >>>     # Do stuff...
         '''
@@ -179,7 +179,7 @@ class ImageNet(DataSet):
     '''
     ImageNet Dataset [DDS+09]_.
 
-    Requires ImageNet in ImageFolder-readable format. 
+    Requires ImageNet in ImageFolder-readable format.
     ImageNet can be downloaded from http://www.image-net.org. See
     `here <https://pytorch.org/docs/master/torchvision/datasets.html#torchvision.datasets.ImageFolder>`_
     for more information about the format.
@@ -366,6 +366,32 @@ class CIFAR(DataSet):
             raise ValueError('CIFAR does not support pytorch_pretrained=True')
         return cifar_models.__dict__[arch](num_classes=self.num_classes)
 
+
+class BinaryMNIST(DataSet):
+    """
+    MNIST but with only the digits 3 and 5
+    """
+    def __init__(self, data_path='/tmp/', **kwargs):
+        """
+        """
+        ds_kwargs = {
+            'num_classes': 2,
+            'mean': ch.tensor([0.1307]),
+            'std': ch.tensor([0.308]),
+            'custom_class': None,
+            'transform_train': da.TRAIN_TRANSFORMS_DEFAULT(28),
+            'transform_test': da.TEST_TRANSFORMS_DEFAULT(28)
+        }
+        ds_kwargs = self.override_args(ds_kwargs, kwargs)
+        super(BinaryMNIST, self).__init__('BinaryMNIST', data_path, **ds_kwargs)
+
+    def get_model(self, arch, pretrained):
+        """
+        """
+        if pretrained:
+            raise ValueError('BinaryMNIST does not support pytorch_pretrained=True')
+        return mnist_models.__dict__[arch](num_classes=self.num_classes)
+
 class CINIC(DataSet):
     """
     CINIC-10 dataset [DCA+18]_.
@@ -462,7 +488,7 @@ class OpenImages(DataSet):
         """
         if custom_grouping is None:
             num_classes = 601
-            label_mapping = None 
+            label_mapping = None
         else:
             num_classes = len(custom_grouping)
             label_mapping = get_label_mapping("custom_imagenet", custom_grouping)
@@ -472,7 +498,7 @@ class OpenImages(DataSet):
             'mean': ch.tensor([0.4859, 0.4131, 0.3083]),
             'std': ch.tensor([0.2919, 0.2507, 0.2273]),
             'custom_class': openimgs_helpers.OIDatasetFolder,
-            'label_mapping': label_mapping, 
+            'label_mapping': label_mapping,
             'transform_train': da.TRAIN_TRANSFORMS_IMAGENET,
             'transform_test': da.TEST_TRANSFORMS_IMAGENET
         }

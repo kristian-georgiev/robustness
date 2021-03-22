@@ -15,7 +15,7 @@ import cox.store
 
 try:
     from .model_utils import make_and_restore_model
-    from .datasets import DATASETS, CustomImageNet
+    from .datasets import DATASETS, CustomImageNet, BinaryMNIST
     from .train import train_model, eval_model
     from .tools import constants, helpers
     from . import defaults, __version__
@@ -38,7 +38,11 @@ parser.add_argument('--make_circ', action='store_true')
 parser.add_argument('--bicubic', action='store_true')
 parser.add_argument('--direct_regularizer', action='store_true')
 parser.add_argument('--reg_alpha', type=float, default=0.05)
-parser.add_argument('--aggregation', default='mean', choices=['mean', 'max', 'softmax'])
+parser.add_argument('--aggregation', default='mean',
+                    choices=['mean', 'max', 'softmax'])
+parser.add_argument('--task', default='breeds',
+                    choices=['breeds', 'binary_mnist'])
+
 
 def main(args, store=None):
     '''Given arguments from `setup_args` and a store from `setup_store`,
@@ -48,30 +52,39 @@ def main(args, store=None):
     # MAKE DATASET AND LOADERS
     data_path = os.path.expandvars(args.data)
 
-    PROJ_DIR = '/home/gridsan/krisgrg/superurop/adv-rot-equiv/'
-    INFO_DIR = PROJ_DIR + 'data/imagenet_class_hierarchy/modified'
-    data_generator = BreedsDatasetGenerator(INFO_DIR)
-    ret = data_generator.get_superclasses(level=3,
-                                          Nsubclasses=None,
-                                          split=None,
-                                          ancestor=None,
-                                          balanced=True)
-    superclasses, subclass_split, _ = ret
-    all_subclasses = subclass_split[0]
-
     bicubic_resample = Image.BICUBIC if args.bicubic else Image.BILINEAR
     transforms = get_rot_transforms(args.num_rots,
                                     args.num_val_rots,
                                     bicubic_resample,
-                                    args.make_circ)
+                                    args.make_circ,
+                                    args.task)
 
-    # Hardcoded for BREEDS, proper mean, std computed for level=3
-    dataset = CustomImageNet(data_path,
-                             custom_grouping=all_subclasses,
-                             transform_train=transforms[0],
-                             transform_test=transforms[1],
-                             mean=ch.tensor([0.486, 0.455, 0.398]),
-                             std=ch.tensor([0.221, 0.217, 0.215]))
+    if args.task == 'breeds':
+        PROJ_DIR = '/home/gridsan/krisgrg/superurop/adv-rot-equiv/'
+        INFO_DIR = PROJ_DIR + 'data/imagenet_class_hierarchy/modified'
+        data_generator = BreedsDatasetGenerator(INFO_DIR)
+        ret = data_generator.get_superclasses(level=3,
+                                              Nsubclasses=None,
+                                              split=None,
+                                              ancestor=None,
+                                              balanced=True)
+        superclasses, subclass_split, _ = ret
+        all_subclasses = subclass_split[0]
+
+        # Hardcoded for BREEDS, proper mean, std computed for level=3
+        dataset = CustomImageNet(data_path,
+                                 custom_grouping=all_subclasses,
+                                 transform_train=transforms[0],
+                                 transform_test=transforms[1],
+                                 mean=ch.tensor([0.486, 0.455, 0.398]),
+                                 std=ch.tensor([0.221, 0.217, 0.215]))
+
+    elif args.task == 'binary_mnist':
+        dataset = BinaryMNIST(data_path,
+                              transform_train=transforms[0],
+                              transform_test=transforms[1])
+    else:
+        raise NotImplementedError('No task {args.task}.')
 
     train_loader, val_loader = dataset.make_loaders(
         args.workers,

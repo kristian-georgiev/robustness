@@ -194,32 +194,55 @@ side length.
 
 
 # Special rotationally-augmented transforms for ImageNet(s)
-def get_rot_transforms(num_rots, num_val_rots, resampling=Image.BICUBIC, make_circ=True):
-    jitter = transforms.ColorJitter(brightness=0.1,
-                                    contrast=0.1,
-                                    saturation=0.1)
-    lighting = Lighting(0.05, IMAGENET_PCA['eigval'],
-                        IMAGENET_PCA['eigvec'])
+def get_rot_transforms(num_rots, num_val_rots, resampling=Image.BICUBIC,
+                       make_circ=True, task=None):
+    if task == 'breeds':
+        jitter = transforms.ColorJitter(brightness=0.1,
+                                        contrast=0.1,
+                                        saturation=0.1)
+        lighting = Lighting(0.05, IMAGENET_PCA['eigval'],
+                            IMAGENET_PCA['eigvec'])
 
-    TRAIN_ROT_TRANSFORMS_IMAGENET = transforms.Compose([
-        transforms.RandomResizedCrop(224),
-        transforms.RandomHorizontalFlip(),
-        MultipleRandomRotations(num_rots, degree=180., resample=resampling),
-        transforms.Lambda(lambda imgs: tuple([jitter(i) for i in imgs])),
-        transforms.Lambda(lambda imgs:
-                          tuple([transforms.ToTensor()(i) for i in imgs])),
-        transforms.Lambda(lambda tensors:
-                          ch.stack([lighting(t) for t in tensors])),
-        MakeCircular() if make_circ else NoneTransform()
-        ])
+        TRAIN_ROT_TRANSFORMS_IMAGENET = transforms.Compose([
+            transforms.RandomResizedCrop(224),
+            transforms.RandomHorizontalFlip(),
+            MultipleRandomRotations(num_rots, degree=180., resample=resampling),
+            transforms.Lambda(lambda imgs: tuple([jitter(i) for i in imgs])),
+            transforms.Lambda(lambda imgs:
+                              tuple([transforms.ToTensor()(i) for i in imgs])),
+            transforms.Lambda(lambda tensors:
+                              ch.stack([lighting(t) for t in tensors])),
+            MakeCircular() if make_circ else NoneTransform()
+            ])
 
-    TEST_ROT_TRANSFORMS_IMAGENET = transforms.Compose([
-        transforms.Resize(256),
-        transforms.CenterCrop(224),
-        MultipleRandomRotations(num_val_rots, degree=180.,
-                                resample=resampling),
-        transforms.Lambda(lambda imgs:
-                          ch.stack([transforms.ToTensor()(i) for i in imgs])),
-        MakeCircular() if make_circ else NoneTransform()
-        ])
-    return TRAIN_ROT_TRANSFORMS_IMAGENET, TEST_ROT_TRANSFORMS_IMAGENET
+        TEST_ROT_TRANSFORMS_IMAGENET = transforms.Compose([
+            transforms.Resize(256),
+            transforms.CenterCrop(224),
+            MultipleRandomRotations(num_val_rots, degree=180.,
+                                    resample=resampling),
+            transforms.Lambda(lambda imgs:
+                              ch.stack([transforms.ToTensor()(i) for i in imgs])),
+            MakeCircular() if make_circ else NoneTransform()
+            ])
+        return TRAIN_ROT_TRANSFORMS_IMAGENET, TEST_ROT_TRANSFORMS_IMAGENET
+
+    elif task == 'binary_mnist':
+        TRAIN_ROT_TRANSFORMS_MNIST = transforms.Compose([
+            transforms.RandomHorizontalFlip(),
+            MultipleRandomRotations(num_rots, degree=180., resample=resampling),
+            transforms.Lambda(lambda imgs:
+                              tuple([transforms.ToTensor()(i) for i in imgs])),
+            MakeCircular() if make_circ else NoneTransform()
+            ])
+
+        TEST_ROT_TRANSFORMS_MNIST = transforms.Compose([
+            MultipleRandomRotations(num_val_rots, degree=180.,
+                                    resample=resampling),
+            transforms.Lambda(lambda imgs:
+                              ch.stack([transforms.ToTensor()(i) for i in imgs])),
+            MakeCircular() if make_circ else NoneTransform()
+            ])
+        return TRAIN_ROT_TRANSFORMS_MNIST, TEST_ROT_TRANSFORMS_MNIST
+
+    else:
+        raise NotImplementedError(f'No task {task}.')

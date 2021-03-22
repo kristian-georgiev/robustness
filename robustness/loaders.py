@@ -61,9 +61,9 @@ def make_loaders(workers, batch_size, transforms, data_path, data_aug=True,
     else:
         if custom_class_args is None: custom_class_args = {}
         if not only_val:
-            train_set = custom_class(root=data_path, train=True, download=True, 
+            train_set = custom_class(root=data_path, train=True, download=True,
                                 transform=transform_train, **custom_class_args)
-        test_set = custom_class(root=data_path, train=False, download=True, 
+        test_set = custom_class(root=data_path, train=False, download=True,
                                 transform=transform_test, **custom_class_args)
 
     if not only_val:
