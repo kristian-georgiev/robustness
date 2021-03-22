@@ -9,6 +9,7 @@ python -m robustness.main --data "/home/gridsan/groups/datasets/ImageNet/" \
                           --dataset custom_imagenet \
                           --epochs 100 \
                           --step-lr 30 \
+                          --batch-size 256 \
                           --out-dir models_breeds/ \
                           --adv-train 0 \
                           --adv-eval 0 \
@@ -16,4 +17,5 @@ python -m robustness.main --data "/home/gridsan/groups/datasets/ImageNet/" \
                           --workers 40 \
                           --make_circ \
                           --bicubic \
-                          --num_rots 4
+                          --num_rots 4 \
+                          --num_val_rots 4

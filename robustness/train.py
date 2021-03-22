@@ -11,6 +11,7 @@ from .tools import constants as consts
 import dill
 import os
 import time
+import ipdb
 import warnings
 
 if int(os.environ.get("NOTEBOOK_MODE", 0)) == 1:
@@ -244,7 +245,7 @@ def train_model(args, model, loaders, *, checkpoint=None, dp_device_ids=None,
                 well as the classifier output.
             custom_accuracy (function)
                 If given, should be a function that takes in model outputs
-                and model targets and outputs a top1 and top5 accuracy, will 
+                and model targets and outputs a top1 and top5 accuracy, will
                 displayed instead of conventional accuracies
             regularizer (function, optional) 
                 If given, this function of `model, input, target` returns a
@@ -263,7 +264,7 @@ def train_model(args, model, loaders, *, checkpoint=None, dp_device_ids=None,
 
         model (AttackerModel) : the model to train.
         loaders (tuple[iterable]) : `tuple` of data loaders of the form
-            `(train_loader, val_loader)` 
+            `(train_loader, val_loader)`
         checkpoint (dict) : a loaded checkpoint previously saved by this library
             (if resuming from checkpoint)
         dp_device_ids (list|None) : if not ``None``, a list of device ids to
@@ -285,7 +286,7 @@ def train_model(args, model, loaders, *, checkpoint=None, dp_device_ids=None,
     check_required_args(args) # Argument sanity check
     for p in ['eps', 'attack_lr', 'custom_eps_multiplier']:
         setattr(args, p, eval(str(getattr(args, p))) if has_attr(args, p) else None)
-    if args.custom_eps_multiplier is not None: 
+    if args.custom_eps_multiplier is not None:
         eps_periods = args.custom_eps_multiplier
         args.custom_eps_multiplier = lambda t: np.interp([t], *zip(*eps_periods))[0]
 
@@ -321,7 +322,6 @@ def train_model(args, model, loaders, *, checkpoint=None, dp_device_ids=None,
             'amp': amp.state_dict() if args.mixed_precision else None,
         }
 
-
         def save_checkpoint(filename):
             ckpt_save_path = os.path.join(args.out_dir if not store else \
                                           store.path, filename)
@@ -333,9 +333,9 @@ def train_model(args, model, loaders, *, checkpoint=None, dp_device_ids=None,
 
         if should_log or last_epoch or should_save_ckpt:
             # log + get best
-            ctx = ch.enable_grad() if disable_no_grad else ch.no_grad() 
+            ctx = ch.enable_grad() if disable_no_grad else ch.no_grad()
             with ctx:
-                prec1, nat_loss = _model_loop(args, 'val', val_loader, model, 
+                prec1, nat_loss = _model_loop(args, 'val', val_loader, model,
                         None, epoch, False, writer)
 
             # loader, model, epoch, input_adv_exs
@@ -422,8 +422,8 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
     # Custom training criterion
     has_custom_train_loss = has_attr(args, 'custom_train_loss')
     train_criterion = args.custom_train_loss if has_custom_train_loss \
-            else ch.nn.CrossEntropyLoss()
-    
+        else ch.nn.CrossEntropyLoss()
+
     has_custom_adv_loss = has_attr(args, 'custom_adv_loss')
     adv_criterion = args.custom_adv_loss if has_custom_adv_loss else None
 
@@ -440,17 +440,31 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
             'use_best': bool(args.use_best)
         }
 
+    if not is_train:
+        print("note: 'Nat' val accuracy for rotation is in fact worst-of-10")
     iterator = tqdm(enumerate(loader), total=len(loader))
     for i, (inp, target) in iterator:
         loss = None
         target = target.cuda(non_blocking=True)
         sh = inp.shape
-        # combine batch and rot dims
-        out, final_inp_tmp = model(inp.view(-1, *sh[2:]),
-                                   target=target,
-                                   make_adv=adv,
-                                   with_latent=True,
-                                   **attack_kwargs)
+        if args.aggregation == 'mean':
+            # combine batch and rot dims
+            out, final_inp_tmp = model(inp.view(-1, *sh[2:]),
+                                       target=target,
+                                       make_adv=adv,
+                                       with_latent=True,
+                                       **attack_kwargs)
+        else:  # aggregation == 'max'
+            # need to be a bit more careful because of batchnorm
+            model.eval()
+            with ch.no_grad():
+                out, final_inp_tmp = model(inp.view(-1, *sh[2:]),
+                                           target=target,
+                                           make_adv=adv,
+                                           with_latent=True,
+                                           **attack_kwargs)
+            model = model.train() if is_train else model.eval()
+
         output, latent = out
         output = output.view(sh[0], sh[1], *output.shape[1:])
         latent = latent.view(sh[0], sh[1], *latent.shape[1:])
@@ -461,9 +475,18 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
                                                      target)
                                      for rot in range(output.size(1))]))
         else:  # aggregation == 'max'
-            loss = ch.max(ch.stack([train_criterion(output[:, rot, ...],
-                                                    target)
-                                    for rot in range(output.size(1))]))
+            with ch.no_grad():
+                worst_rot = ch.argmax(ch.stack([train_criterion(output[:, rot, ...],
+                                                                target).mean()
+                                                for rot in range(output.size(1))]),
+                                      dim=0)
+            out, final_inp = model(inp[:, worst_rot, ...],
+                                   target=target,
+                                   make_adv=adv,
+                                   with_latent=True,
+                                   **attack_kwargs)
+            output, latent = out
+            loss = train_criterion(output, target)
 
         reg_term = 0.
         if args.direct_regularizer:
@@ -473,7 +496,10 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
         if len(loss.shape) > 0:
             loss = loss.mean()
 
-        model_logits = output_nat[0] if (type(output_nat) is tuple) else output_nat
+        if is_train:
+            model_logits = output_nat[0] if (type(output_nat) is tuple) else output_nat
+        else:  # val
+            model_logits = output
 
         # measure accuracy and record loss
         top1_acc = float('nan')
@@ -481,12 +507,21 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
         try:
             maxk = min(5, model_logits.shape[-1])
             if has_attr(args, "custom_accuracy"):
+                # warning: custom_accuracy case not implemented for rot
                 prec1, prec5 = args.custom_accuracy(model_logits, target)
             else:
-                prec1, prec5 = helpers.accuracy(model_logits,
-                                                target,
-                                                topk=(1, maxk))
-                prec1, prec5 = prec1[0], prec5[0]
+                if not is_train:
+                    # record worst-case out of 10 rotations
+                    prec1, prec5 = helpers.worst_case_accuracy(model_logits,
+                                                               target,
+                                                               topk=(1, maxk))
+                    prec1, prec5 = prec1[0], prec5[0]
+
+                else:
+                    prec1, prec5 = helpers.accuracy(model_logits,
+                                                    target,
+                                                    topk=(1, maxk))
+                    prec1, prec5 = prec1[0], prec5[0]
 
             losses.update(loss.item(), inp.size(0))
             top1.update(prec1, inp.size(0))
@@ -497,9 +532,6 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
         except:
             warnings.warn('Failed to calculate the accuracy.')
 
-        # reg_term = 0.0
-        # if has_attr(args, "regularizer"):
-            # reg_term = args.regularizer(model, inp, target)
         loss = loss + reg_term
 
         # compute gradient and do SGD step

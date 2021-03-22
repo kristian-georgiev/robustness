@@ -33,6 +33,7 @@ parser = defaults.add_args_to_parser(defaults.MODEL_LOADER_ARGS, parser)
 parser = defaults.add_args_to_parser(defaults.TRAINING_ARGS, parser)
 parser = defaults.add_args_to_parser(defaults.PGD_ARGS, parser)
 parser.add_argument('--num_rots', type=int, default=0)
+parser.add_argument('--num_val_rots', type=int, default=10)
 parser.add_argument('--make_circ', action='store_true')
 parser.add_argument('--bicubic', action='store_true')
 parser.add_argument('--direct_regularizer', action='store_true')
@@ -58,8 +59,9 @@ def main(args, store=None):
     superclasses, subclass_split, _ = ret
     all_subclasses = subclass_split[0]
 
-    bicubic_resample = Image.BICUBIC if args.bicubic else None
+    bicubic_resample = Image.BICUBIC if args.bicubic else Image.BILINEAR
     transforms = get_rot_transforms(args.num_rots,
+                                    args.num_val_rots,
                                     bicubic_resample,
                                     args.make_circ)
 

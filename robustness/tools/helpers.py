@@ -38,6 +38,60 @@ def calc_est_grad(func, x, y, rad, num_samples):
 def ckpt_at_epoch(num):
     return '%s_%s' % (num, constants.CKPT_NAME)
 
+def worst_case_accuracy(output, target, topk=(1,), exact=False):
+    """
+        Computes the top-k accuracy for the specified values of k
+
+        Args:
+            output (ch.tensor) : model output (N, classes) or (N, attributes) 
+                for sigmoid/multitask binary classification
+            target (ch.tensor) : correct labels (N,) [multiclass] or (N,
+                attributes) [multitask binary]
+            topk (tuple) : for each item "k" in this tuple, this method
+                will return the top-k accuracy
+            exact (bool) : whether to return aggregate statistics (if
+                False) or per-example correctness (if True)
+
+        Returns:
+            A list of top-k accuracies.
+    """
+    with ch.no_grad():
+        correct = None
+        for rot in range(output.size(1)):
+            logits = output[:, rot, ...]
+            # Binary Classification
+            if len(target.shape) > 1:
+                assert logits.shape == target.shape, \
+                    "Detected binary classification but logits shape != target shape"
+                return [ch.round(ch.sigmoid(logits)).eq(ch.round(target)).float().mean()], [-1.0]
+
+            maxk = max(topk)
+            batch_size = target.size(0)
+
+            _, pred = logits.topk(maxk, 1, True, True)
+            pred = pred.t()
+            if correct is None:
+                correct = pred.eq(target.view(1, -1).expand_as(pred)).float()
+            else:
+                correct += pred.eq(target.view(1, -1).expand_as(pred)).float()
+
+        num_rots = output.size(1)
+        correct = (correct == float(num_rots))  # all classified correctly
+
+        res = []
+        res_exact = []
+        for k in topk:
+            correct_k = correct[:k].reshape(-1).float()
+            ck_sum = correct_k.sum(0, keepdim=True)
+            res.append(ck_sum.mul_(100.0 / batch_size))
+            res_exact.append(correct_k)
+
+        if not exact:
+            return res
+
+        return res_exact
+
+
 def accuracy(output, target, topk=(1,), exact=False):
     """
         Computes the top-k accuracy for the specified values of k

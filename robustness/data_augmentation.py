@@ -194,7 +194,7 @@ side length.
 
 
 # Special rotationally-augmented transforms for ImageNet(s)
-def get_rot_transforms(num_rots, resampling=Image.BICUBIC, make_circ=True):
+def get_rot_transforms(num_rots, num_val_rots, resampling=Image.BICUBIC, make_circ=True):
     jitter = transforms.ColorJitter(brightness=0.1,
                                     contrast=0.1,
                                     saturation=0.1)
@@ -216,7 +216,8 @@ def get_rot_transforms(num_rots, resampling=Image.BICUBIC, make_circ=True):
     TEST_ROT_TRANSFORMS_IMAGENET = transforms.Compose([
         transforms.Resize(256),
         transforms.CenterCrop(224),
-        MultipleRandomRotations(num_rots, degree=180., resample=resampling),
+        MultipleRandomRotations(num_val_rots, degree=180.,
+                                resample=resampling),
         transforms.Lambda(lambda imgs:
                           ch.stack([transforms.ToTensor()(i) for i in imgs])),
         MakeCircular() if make_circ else NoneTransform()
