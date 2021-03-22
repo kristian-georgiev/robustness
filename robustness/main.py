@@ -38,7 +38,7 @@ parser.add_argument('--make_circ', action='store_true')
 parser.add_argument('--bicubic', action='store_true')
 parser.add_argument('--direct_regularizer', action='store_true')
 parser.add_argument('--reg_alpha', type=float, default=0.05)
-parser.add_argument('--aggregation', default='mean', choices=['mean', 'max'])
+parser.add_argument('--aggregation', default='mean', choices=['mean', 'max', 'softmax'])
 
 def main(args, store=None):
     '''Given arguments from `setup_args` and a store from `setup_store`,

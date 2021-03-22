@@ -441,13 +441,16 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
         }
 
     if not is_train:
-        print("note: 'Nat' val accuracy for rotation is in fact worst-of-10")
+        print("note: 'Nat' val accuracy for rotation is in fact worst-of-10,\
+               top5 is fake newz")
     iterator = tqdm(enumerate(loader), total=len(loader))
+    if args.aggregation == 'softmax':
+        softmax = nn.Softmax(dim=0)
     for i, (inp, target) in iterator:
         loss = None
         target = target.cuda(non_blocking=True)
         sh = inp.shape
-        if args.aggregation == 'mean':
+        if args.aggregation == 'mean' or args.aggregation == 'softmax':
             # combine batch and rot dims
             out, final_inp_tmp = model(inp.view(-1, *sh[2:]),
                                        target=target,
@@ -474,6 +477,12 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
             loss = ch.mean(ch.stack([train_criterion(output[:, rot, ...],
                                                      target)
                                      for rot in range(output.size(1))]))
+        elif args.aggregation == 'softmax':
+            loss = ch.stack([train_criterion(output[:, rot, ...],
+                                             target)
+                             for rot in range(output.size(1))])
+            sm = softmax(loss).detach()
+            loss = (loss * sm).sum()
         else:  # aggregation == 'max'
             with ch.no_grad():
                 worst_rot = ch.argmax(ch.stack([train_criterion(output[:, rot, ...],
