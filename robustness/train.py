@@ -423,9 +423,10 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
     has_custom_train_loss = has_attr(args, 'custom_train_loss')
     train_criterion = args.custom_train_loss if has_custom_train_loss \
         else ch.nn.CrossEntropyLoss()
+    adv_criterion = ch.nn.CrossEntropyLoss(reduction='none')
 
-    has_custom_adv_loss = has_attr(args, 'custom_adv_loss')
-    adv_criterion = args.custom_adv_loss if has_custom_adv_loss else None
+    # has_custom_adv_loss = has_attr(args, 'custom_adv_loss')
+    # adv_criterion = args.custom_adv_loss if has_custom_adv_loss else None
 
     attack_kwargs = {}
     if adv:
@@ -485,11 +486,16 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
             loss = (loss * sm).sum()
         else:  # aggregation == 'max'
             with ch.no_grad():
-                worst_rot = ch.argmax(ch.stack([train_criterion(output[:, rot, ...],
-                                                                target).mean()
-                                                for rot in range(output.size(1))]),
-                                      dim=0)
-            out, final_inp = model(inp[:, worst_rot, ...],
+                worst_rots = ch.argmax(ch.stack([adv_criterion(output[:, rot, ...],
+                                                               target)
+                                                 for rot in range(output.size(1))]),
+                                       dim=0)
+
+                # select worst-case rotation for each angle
+                inp = ch.stack([inp[idx, worst_rots[idx], ...]
+                                for idx in range(len(inp))])
+                
+            out, final_inp = model(inp,
                                    target=target,
                                    make_adv=adv,
                                    with_latent=True,
@@ -522,7 +528,7 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
                 # warning: custom_accuracy case not implemented for rot
                 prec1, prec5 = args.custom_accuracy(model_logits, target)
             else:
-                if not is_train:
+                if not is_train and args.aggregation != "max":
                     # record worst-case out of 10 rotations
                     prec1, prec5 = helpers.worst_case_accuracy(model_logits,
                                                                target,
