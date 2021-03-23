@@ -1,6 +1,6 @@
 """
 Module containing all the supported datasets, which are subclasses of the
-abstract class :class:`robustness.datasets.DataSet`. 
+abstract class :class:`robustness.datasets.DataSet`.
 
 Currently supported datasets:
 
@@ -33,7 +33,7 @@ from .tools.helpers import get_label_mapping
 # Datasets: (all subclassed from dataset)
 # In order:
 ## ImageNet
-## Restricted Imagenet 
+## Restricted Imagenet
 ## Other Datasets:
 ## - CIFAR
 ## - CINIC
@@ -43,7 +43,7 @@ from .tools.helpers import get_label_mapping
 class DataSet(object):
     '''
     Base class for representing a dataset. Meant to be subclassed, with
-    subclasses implementing the `get_model` function. 
+    subclasses implementing the `get_model` function.
     '''
 
     def __init__(self, ds_name, data_path, **kwargs):
@@ -383,7 +383,7 @@ class BinaryMNIST(DataSet):
             'transform_test': da.TEST_TRANSFORMS_DEFAULT(28)
         }
         ds_kwargs = self.override_args(ds_kwargs, kwargs)
-        super(BinaryMNIST, self).__init__('BinaryMNIST', data_path, **ds_kwargs)
+        super(BinaryMNIST, self).__init__('binary_mnist', data_path, **ds_kwargs)
 
     def get_model(self, arch, pretrained):
         """
@@ -520,7 +520,8 @@ DATASETS = {
     'cinic': CINIC,
     'a2b': A2B,
     'places365': Places365,
-    'openimages': OpenImages
+    'openimages': OpenImages,
+    'binary_mnist': BinaryMNIST
 }
 '''
 Dictionary of datasets. A dataset class can be accessed as:

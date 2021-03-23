@@ -231,8 +231,7 @@ def get_rot_transforms(num_rots, num_val_rots, resampling=Image.BICUBIC,
             transforms.RandomHorizontalFlip(),
             MultipleRandomRotations(num_rots, degree=180., resample=resampling),
             transforms.Lambda(lambda imgs:
-                              tuple([transforms.ToTensor()(i) for i in imgs])),
-            MakeCircular() if make_circ else NoneTransform()
+                              ch.stack([transforms.ToTensor()(i) for i in imgs])),
             ])
 
         TEST_ROT_TRANSFORMS_MNIST = transforms.Compose([
@@ -240,7 +239,6 @@ def get_rot_transforms(num_rots, num_val_rots, resampling=Image.BICUBIC,
                                     resample=resampling),
             transforms.Lambda(lambda imgs:
                               ch.stack([transforms.ToTensor()(i) for i in imgs])),
-            MakeCircular() if make_circ else NoneTransform()
             ])
         return TRAIN_ROT_TRANSFORMS_MNIST, TEST_ROT_TRANSFORMS_MNIST
 

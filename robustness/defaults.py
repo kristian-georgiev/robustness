@@ -17,6 +17,12 @@ TRAINING_DEFAULTS = {
         "weight_decay":5e-4,
         "step_lr": 50
     },
+    datasets.BinaryMNIST: {
+        "epochs": 100,
+        "batch_size": 128,
+        "weight_decay":5e-4,
+        "step_lr": 30
+    },
     datasets.CINIC: {
         "epochs": 150,
         "batch_size": 128,
