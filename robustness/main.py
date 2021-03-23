@@ -39,7 +39,8 @@ parser.add_argument('--bicubic', action='store_true')
 parser.add_argument('--direct_regularizer', action='store_true')
 parser.add_argument('--reg_alpha', type=float, default=0.05)
 parser.add_argument('--aggregation', default='mean',
-                    choices=['mean', 'max', 'softmax'])
+                    choices=['mean', 'max', 'softmax', 'lp'])
+parser.add_argument('--p_norm', type=int, default=2)
 parser.add_argument('--task', default='breeds',
                     choices=['breeds', 'binary_mnist'])
 

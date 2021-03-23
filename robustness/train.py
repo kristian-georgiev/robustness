@@ -473,22 +473,31 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
         output = output.view(sh[0], sh[1], *output.shape[1:])
         latent = latent.view(sh[0], sh[1], *latent.shape[1:])
         output_nat = output[:, 0, ...]
+        nrot = output.size(1)
 
         if args.aggregation == 'mean':
             loss = ch.mean(ch.stack([train_criterion(output[:, rot, ...],
                                                      target)
-                                     for rot in range(output.size(1))]))
+                                     for rot in range(nrot)]))
+
         elif args.aggregation == 'softmax':
-            loss = ch.stack([train_criterion(output[:, rot, ...],
-                                             target)
-                             for rot in range(output.size(1))])
+            loss = ch.stack([adv_criterion(output[:, rot, ...],
+                                           target)
+                             for rot in range(nrot)])
             sm = softmax(loss).detach()
-            loss = (loss * sm).sum()
+            loss = (loss * sm).sum(dim=0)
+
+        elif args.aggregation == 'lp':
+            loss = ch.stack([adv_criterion(output[:, rot, ...],
+                                           target)
+                             for rot in range(nrot)])
+            loss = ch.norm(loss, dim=0, p=args.p_norm)
+
         else:  # aggregation == 'max'
             with ch.no_grad():
                 worst_rots = ch.argmax(ch.stack([adv_criterion(output[:, rot, ...],
                                                                target)
-                                                 for rot in range(output.size(1))]),
+                                                 for rot in range(nrot)]),
                                        dim=0)
 
                 # select worst-case rotation for each angle
