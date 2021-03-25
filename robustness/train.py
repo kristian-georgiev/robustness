@@ -451,7 +451,7 @@ def _model_loop(args, loop_type, loader, model, opt, epoch, adv, writer):
         loss = None
         target = target.cuda(non_blocking=True)
         sh = inp.shape
-        if args.aggregation == 'mean' or args.aggregation == 'softmax':
+        if args.aggregation != 'max':
             # combine batch and rot dims
             out, final_inp_tmp = model(inp.view(-1, *sh[2:]),
                                        target=target,
